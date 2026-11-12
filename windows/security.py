@@ -1,7 +1,9 @@
-"""TLS identity, full-certificate pinning and bounded failed-PIN throttling."""
+"""LAN-only TLS transport and bounded failed-PIN throttling.
+
+WARNING: this simplified pairing mode does not authenticate the server.
+An active network attacker can impersonate it and steal the PIN and screen.
+"""
 import datetime
-import hashlib
-import hmac
 import http.client
 import ipaddress
 import os
@@ -16,22 +18,6 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-
-
-def normalize_fingerprint(value):
-    value = value.replace(":", "").replace(" ", "").strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", value):
-        raise ValueError("The SHA-256 fingerprint must contain exactly 64 hexadecimal digits.")
-    return value
-
-
-def fingerprint(der):
-    return hashlib.sha256(der).hexdigest().upper()
-
-
-def format_fingerprint(value):
-    value = normalize_fingerprint(value).upper()
-    return ":".join(value[i:i+2] for i in range(0, 64, 2))
 
 
 def ensure_identity(directory):
@@ -58,22 +44,19 @@ def ensure_identity(directory):
         except Exception:
             os.unlink(key_path)
             raise
-    with open(cert_path, "rb") as f:
-        cert = x509.load_pem_x509_certificate(f.read())
-    return cert_path, key_path, fingerprint(cert.public_bytes(serialization.Encoding.DER))
+    return cert_path, key_path
 
 
 def server_context(directory):
-    cert, key, fp = ensure_identity(directory)
+    cert, key = ensure_identity(directory)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(cert, key)
-    return context, fp
+    return context
 
 
-class PinnedHTTPSConnection(http.client.HTTPSConnection):
-    def __init__(self, *args, fingerprint_value, **kwargs):
-        self.expected = normalize_fingerprint(fingerprint_value)
+class LanHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
@@ -81,31 +64,22 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
         kwargs["context"] = context
         super().__init__(*args, **kwargs)
 
-    def connect(self):
-        super().connect()
-        actual = fingerprint(self.sock.getpeercert(binary_form=True)).lower()
-        if not hmac.compare_digest(actual, self.expected):
-            self.close()
-            raise ssl.SSLError("Certificate fingerprint mismatch")
-
-
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
 
 
-class PinHandler(urllib.request.HTTPSHandler):
-    def __init__(self, expected):
+class LanHandler(urllib.request.HTTPSHandler):
+    def __init__(self):
         super().__init__()
-        self.expected = normalize_fingerprint(expected)
 
     def https_open(self, req):
         def factory(host, **kwargs):
-            return PinnedHTTPSConnection(host, fingerprint_value=self.expected, **kwargs)
+            return LanHTTPSConnection(host, **kwargs)
         return self.do_open(factory, req)
 
 
-def open_pinned(host, port, path, pin, fingerprint_value, data=None, timeout=10):
+def open_lan(host, port, path, pin, data=None, timeout=10):
     ipaddress.IPv4Address(host)
     if not re.fullmatch(r"[0-9]{8}", pin):
         raise ValueError("PIN must be exactly eight digits")
@@ -113,7 +87,7 @@ def open_pinned(host, port, path, pin, fingerprint_value, data=None, timeout=10)
         raise ValueError("Invalid path")
     req = urllib.request.Request(f"https://{host}:{port}{path}", data=data,
                                  headers={"Authorization": "Bearer " + pin, "Content-Type": "application/json"})
-    return urllib.request.build_opener(urllib.request.ProxyHandler({}), PinHandler(fingerprint_value), NoRedirect()).open(req, timeout=timeout)
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), LanHandler(), NoRedirect()).open(req, timeout=timeout)
 
 
 class PinThrottle:

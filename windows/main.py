@@ -309,7 +309,7 @@ class App:
             "Permissions needed",
             f"{APP} needs your permission to:\n\n"
             "• Capture your screen and send it to approved devices\n"
-            f"• Run a TLS server on port {PORT}; verify its full fingerprint separately\n"
+            f"• Run a LAN server on port {PORT}; host identity is not verified\n"
             "• Allow remote mouse and keyboard input only if you enable it\n\n"
             "Every new device must know your PIN and be approved by you.", parent=self.root)
         if not ok:
@@ -359,7 +359,7 @@ class App:
             self.status.config(text="● Stopped", fg="#f87171"); self.main_btn.config(text="Start sharing", bg=ACC)
         else:
             try:
-                context, _ = server_context(os.path.join(os.path.dirname(CFG), "identity"))
+                context = server_context(os.path.join(os.path.dirname(CFG), "identity"))
                 self.server = TLSServer(("0.0.0.0", PORT), Handler, context)
             except OSError as e:
                 return messagebox.showerror(APP, f"Cannot start server: {e}")

@@ -5,7 +5,6 @@ import android.security.keystore.KeyProperties
 import java.math.BigInteger
 import java.security.KeyPairGenerator
 import java.security.KeyStore
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -18,18 +17,8 @@ import javax.security.auth.x500.X500Principal
 object TlsIdentity {
     private const val ALIAS = "screenbridge-host"
 
-    fun normalized(value: String): String {
-        val v = value.replace(":", "").replace(" ", "").trim().lowercase()
-        require(v.matches(Regex("[0-9a-f]{64}"))) { "A complete SHA-256 fingerprint is required" }
-        return v
-    }
-
-    fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
-    fun fingerprint(cert: X509Certificate) = hex(MessageDigest.getInstance("SHA-256").digest(cert.encoded))
-    fun pretty(value: String) = normalized(value).uppercase().chunked(2).joinToString(":")
-
     @Synchronized
-    fun host(): Pair<SSLContext, String> {
+    fun host(): SSLContext {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         if (!store.containsAlias(ALIAS)) {
             val gen = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore")
@@ -49,11 +38,12 @@ object TlsIdentity {
         km.init(store, null)
         val ctx = SSLContext.getInstance("TLS")
         ctx.init(km.keyManagers, null, SecureRandom())
-        return Pair(ctx, fingerprint(store.getCertificate(ALIAS) as X509Certificate))
+        return ctx
     }
 
-    fun pinnedClient(expected: String): SSLContext {
-        val expectedBytes = normalized(expected).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    // Simplified LAN pairing deliberately does not authenticate the host.
+    // An active attacker can impersonate it and intercept the PIN and screen.
+    fun lanClient(): SSLContext {
         val trust = object : X509TrustManager {
             override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
@@ -61,8 +51,6 @@ object TlsIdentity {
             }
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
                 if (chain.isNullOrEmpty()) throw CertificateException("Missing server certificate")
-                val actual = MessageDigest.getInstance("SHA-256").digest(chain[0].encoded)
-                if (!MessageDigest.isEqual(actual, expectedBytes)) throw CertificateException("Fingerprint mismatch")
             }
         }
         return SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), SecureRandom()) }

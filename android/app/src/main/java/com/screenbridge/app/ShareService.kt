@@ -31,12 +31,11 @@ import java.util.concurrent.Semaphore
 import javax.net.ssl.SSLServerSocket
 import kotlin.concurrent.thread
 
-/** Captures a consented screen and serves MJPEG over fingerprint-pinned TLS. */
+/** Captures a consented screen and serves MJPEG over LAN-only TLS. */
 class ShareService : Service() {
     companion object {
         @Volatile var running = false
         @Volatile var pin = ""
-        @Volatile var fingerprint = ""
         const val PORT = 8766
     }
 
@@ -120,13 +119,11 @@ class ShareService : Service() {
         }, Handler(capThread.looper))
 
         server = try {
-            val (ctx, fp) = TlsIdentity.host()
-            fingerprint = fp
+            val ctx = TlsIdentity.host()
             (ctx.serverSocketFactory.createServerSocket(PORT) as SSLServerSocket).apply {
                 enabledProtocols = arrayOf("TLSv1.2")
             }
         } catch (_: Exception) {
-            fingerprint = ""
             stopSelf()
             return START_NOT_STICKY
         }
@@ -198,7 +195,6 @@ class ShareService : Service() {
         running = false
         try { server?.close() } catch (_: Exception) { }
         synchronized(clients) { clients.toList().forEach { try { it.close() } catch (_: Exception) {} }; clients.clear() }
-        fingerprint = ""
         pin = ""
         display?.release()
         reader?.close()

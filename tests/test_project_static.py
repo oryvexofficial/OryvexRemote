@@ -39,9 +39,10 @@ class ProjectChecks(unittest.TestCase):
         client, host, tls = ((d / f).read_text(encoding="utf-8") for f in ("MainActivity.kt", "ShareService.kt", "TlsIdentity.kt"))
         self.assertIn('URL("https://', client)
         self.assertIn('setRequestProperty("Authorization", "Bearer $pin")', client)
-        self.assertIn("TlsIdentity.pinnedClient(fingerprint)", client)
-        self.assertIn("MessageDigest.isEqual(actual, expectedBytes)", tls)
-        self.assertIn('Regex("[0-9a-f]{64}")', tls)
+        self.assertIn("TlsIdentity.lanClient()", client)
+        self.assertIn("Host identity is intentionally not verified", client)
+        self.assertNotIn("fingerprintInput", client)
+        self.assertNotIn("pinnedClient", tls)
         self.assertIn("TlsIdentity.host()", host)
         self.assertIn("q.size >= 5", host)
 

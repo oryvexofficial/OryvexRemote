@@ -58,18 +58,8 @@
                         android:inputType="numberPassword" android:singleLine="true" android:maxLength="8"
                         android:textColor="#192B28" />
                 </com.google.android.material.textfield.TextInputLayout>
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp" android:hint="Host SHA-256 fingerprint"
-                    app:boxStrokeColor="#C94430" app:hintTextColor="#C94430">
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/fingerprintInput"
-                        android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:inputType="textNoSuggestions" android:singleLine="true"
-                        android:textColor="#192B28" />
-                </com.google.android.material.textfield.TextInputLayout>
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp" android:text="Compare all 64 fingerprint digits with the host through a trusted channel."
+                    android:layout_marginTop="6dp" android:text="Same private network only. Host identity is not verified."
                     android:textColor="#657975" android:textSize="13sp" />
                 <com.google.android.material.button.MaterialButton android:id="@+id/connectBtn"
                     android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="14dp"
@@ -100,7 +90,7 @@
                     android:textColor="#192B28" app:cornerRadius="12dp" app:backgroundTint="#FFF5EF" />
             </LinearLayout>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="18dp" android:text="LAN ONLY  •  TLS WITH VERIFIED FINGERPRINT\nUse a trusted private network."
+                android:layout_marginTop="18dp" android:text="PRIVATE LAN ONLY  •  HOST IDENTITY NOT VERIFIED\nReserve device IPs in your router to keep them fixed."
                 android:textColor="#657975" android:textSize="12sp" android:lineSpacingExtra="4dp" />
         </LinearLayout>
     </ScrollView>

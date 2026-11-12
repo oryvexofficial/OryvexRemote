@@ -59,7 +59,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fpsText: TextView
     private lateinit var ipInput: EditText
     private lateinit var pinInput: EditText
-    private lateinit var fingerprintInput: EditText
     private lateinit var connectBtn: Button
     private lateinit var shareBtn: Button
     private lateinit var shareInfo: TextView
@@ -77,7 +76,6 @@ class MainActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private var ip = ""
     private var pin = ""
-    private var fingerprint = ""
     private var quality = 1
     private var control = false
     private var controlAllowed = false
@@ -100,7 +98,6 @@ class MainActivity : AppCompatActivity() {
         fpsText = findViewById(R.id.fpsText)
         ipInput = findViewById(R.id.ipInput)
         pinInput = findViewById(R.id.pinInput)
-        fingerprintInput = findViewById(R.id.fingerprintInput)
         connectBtn = findViewById(R.id.connectBtn)
 
         val prefs = getSharedPreferences("sb", MODE_PRIVATE)
@@ -119,8 +116,6 @@ class MainActivity : AppCompatActivity() {
             if (!pin.matches(Regex("""[0-9]{8}"""))) {
                 status.text = "Enter the eight-digit PIN shown on the other device"; return@setOnClickListener
             }
-            fingerprint = try { TlsIdentity.normalized(fingerprintInput.text.toString()) }
-                catch (_: IllegalArgumentException) { status.text = "Enter the full 64-digit host SHA-256 fingerprint"; return@setOnClickListener }
             prefs.edit().putString("ip", ip).apply()
             connect()
         }
@@ -161,8 +156,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun url(path: String, extra: String = ""): HttpURLConnection {
         val conn = URL("https://$ip:$port$path$extra").openConnection() as HttpsURLConnection
-        conn.sslSocketFactory = TlsIdentity.pinnedClient(fingerprint).socketFactory
-        // Exact full-certificate pin replaces DNS/CA identity checking for these LAN IPs.
+        conn.sslSocketFactory = TlsIdentity.lanClient().socketFactory
+        // Host identity is intentionally not verified in simplified pairing.
         conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
         conn.instanceFollowRedirects = false
         conn.setRequestProperty("Authorization", "Bearer $pin")
@@ -190,7 +185,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 c.disconnect()
             } catch (e: Exception) {
-                msg = "Connection failed. Check the full fingerprint, IP, Wi-Fi and sharing."
+                msg = "Connection failed. Check the IP, Wi-Fi and sharing."
             }
             runOnUiThread {
                 connectBtn.isEnabled = true
@@ -204,7 +199,7 @@ class MainActivity : AppCompatActivity() {
         viewerPanel.visibility = View.VISIBLE
         viewerPanel.alpha = 0f
         viewerPanel.animate().alpha(1f).setDuration(240).start()
-        status.text = "Connected over TLS to the verified fingerprint."
+        status.text = "Connected. Host identity is not verified."
         startStream()
     }
 
@@ -300,11 +295,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateShare() {
         if (ShareService.running) {
-            val hostFp = runCatching { TlsIdentity.pretty(ShareService.fingerprint) }.getOrDefault("Unavailable")
-            shareInfo.text = "Sharing now. Choose Android on the viewer.\nIP: ${localIp()}   PIN: ${ShareService.pin}\nSHA-256:\n$hostFp"
+            shareInfo.text = "Sharing now. Choose Android on the viewer.\nIP: ${localIp()}   PIN: ${ShareService.pin}\nReserve this IP in your router for a fixed address."
             shareBtn.text = "Stop sharing"
         } else {
-            shareInfo.text = "Show this screen on Windows or Android. View only."
+            shareInfo.text = "Your local IP: ${localIp()}\nShare this screen on Windows or Android. View only."
             shareBtn.text = "Share phone screen  →"
         }
     }
