@@ -66,15 +66,15 @@ jobs:
       - uses: actions/download-artifact@v4
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.0.0-auto.${{ github.run_number }}.${{ github.run_attempt }}
+          tag_name: v0.${{ github.run_number }}.${{ github.run_attempt }}
           target_commitish: ${{ github.sha }}
-          name: Automatic development build ${{ github.run_number }}.${{ github.run_attempt }}
-          prerelease: true
+          name: Automatic release v0.${{ github.run_number }}.${{ github.run_attempt }}
+          prerelease: false
           fail_on_unmatched_files: true
           body: |
-            Automated development build. Windows binaries are unsigned and the APK
-            uses a debug signing key. Test before use. LAN pairing does not verify
-            host identity and is vulnerable to active network interception.
+            Automated release from a development build. Windows binaries are unsigned
+            and the APK uses a debug signing key. Test before use. LAN pairing does
+            not verify host identity and is vulnerable to active network interception.
           files: |
             ScreenBridge-Windows/**/*.exe
             ScreenBridge-Android/*.apk
