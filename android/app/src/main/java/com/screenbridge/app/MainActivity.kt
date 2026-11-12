@@ -549,6 +549,7 @@ class MainActivity : AppCompatActivity() {
             }
             when (ev.actionMasked) {
                 MotionEvent.ACTION_POINTER_DOWN -> lastScrollY = (ev.getY(0) + ev.getY(1)) / 2
+                MotionEvent.ACTION_UP -> if (ev.eventTime - ev.downTime > 250) pt("move", ev)
                 MotionEvent.ACTION_MOVE -> if (ev.pointerCount == 1) {
                     val now = SystemClock.uptimeMillis()
                     if (now - lastMove > 35) { lastMove = now; pt("move", ev) }

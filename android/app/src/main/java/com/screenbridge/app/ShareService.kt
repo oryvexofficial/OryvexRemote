@@ -97,7 +97,8 @@ class ShareService : Service() {
             "rclick" -> { val x = px("x", sw); val y = px("y", sh); cs.post { cs.longPress(x, y) } }
             "drag" -> {
                 val x1 = px("x", sw); val y1 = px("y", sh); val x2 = px("x2", sw); val y2 = px("y2", sh)
-                cs.post { cs.stroke(x1, y1, x2, y2, 350) }
+                val ms = d.optLong("ms", 350L).coerceIn(80L, 2000L)
+                cs.post { cs.stroke(x1, y1, x2, y2, ms) }
             }
             "scroll" -> {
                 val dy = d.getInt("dy")

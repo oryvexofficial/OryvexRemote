@@ -94,6 +94,14 @@ def coordinate(x, extent):
     return round(x * max(0, extent - 1))
 
 
+def _click(down, up):
+    user32.mouse_event(down, 0, 0, 0, 0)
+    try:
+        time.sleep(0.02)
+    finally:
+        user32.mouse_event(up, 0, 0, 0, 0)
+
+
 def handle_input(d):
     if not isinstance(d, dict):
         raise ValueError("invalid input")
@@ -107,12 +115,12 @@ def handle_input(d):
             end_x, end_y = coordinate(d.get("x2"), width), coordinate(d.get("y2"), height)
         user32.SetCursorPos(x, y)
     if t == "click":
-        user32.mouse_event(2, 0, 0, 0, 0); user32.mouse_event(4, 0, 0, 0, 0)
+        _click(2, 4)
     elif t == "dbl":
         for _ in range(2):
-            user32.mouse_event(2, 0, 0, 0, 0); user32.mouse_event(4, 0, 0, 0, 0)
+            _click(2, 4)
     elif t == "rclick":
-        user32.mouse_event(8, 0, 0, 0, 0); user32.mouse_event(16, 0, 0, 0, 0)
+        _click(8, 16)
     elif t == "scroll":
         dy = int(d.get("dy", 0))
         if not -10 <= dy <= 10: raise ValueError("invalid scroll")

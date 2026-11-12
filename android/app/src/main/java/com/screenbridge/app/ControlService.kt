@@ -43,7 +43,7 @@ class ControlService : AccessibilityService() {
         return dispatchGesture(g, null, null)
     }
 
-    fun tap(x: Float, y: Float) = stroke(x, y, x, y, 50)
+    fun tap(x: Float, y: Float) = stroke(x, y, x, y, 40)
     fun longPress(x: Float, y: Float) = stroke(x, y, x, y, 700)
     fun doubleTap(x: Float, y: Float) { tap(x, y); postDelayed(140) { tap(x, y) } }
 

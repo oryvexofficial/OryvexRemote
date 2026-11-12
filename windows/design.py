@@ -82,8 +82,8 @@ def build_app(m):
             self.canvas.bind('<Button-1>', self.left_down)
             self.canvas.bind('<ButtonRelease-1>', self.left_up)
             self.canvas.bind('<Motion>', self.move_pointer)
-            self.canvas.bind('<Double-Button-1>', lambda e: self.pointer('dbl', e))
-            self.canvas.bind('<Button-3>', lambda e: self.pointer('rclick', e))
+            self.canvas.bind('<Double-Button-1>', self.double_down)
+            self.canvas.bind('<Button-3>', self.right_click)
             self.canvas.bind('<MouseWheel>', lambda e: self.send({'t': 'scroll', 'dy': 1 if e.delta > 0 else -1}))
             self.win.protocol('WM_DELETE_WINDOW', self.close)
 
@@ -192,6 +192,7 @@ def build_app(m):
             threading.Thread(target=check, daemon=True).start()
 
         def pointer(self, kind, event):
+            if self.port == 8766 and kind in ('click', 'dbl'): return  # handled on press/release
             if not self.control or not hasattr(self, 'image_box'): return
             x, y, w, h = self.image_box
             if not (x <= event.x <= x+w and y <= event.y <= y+h): return
@@ -211,12 +212,40 @@ def build_app(m):
             if not (x <= event.x <= x+w and y <= event.y <= y+h): return None
             return ((event.x-x)/w, (event.y-y)/h)
 
+        def double_down(self, event):
+            # Tk replaces the 2nd Button-1 with this event; treat it as a normal press.
+            if self.port == 8766: return self.left_down(event)
+            self.pointer('dbl', event)
+
+        def right_click(self, event):
+            if self.port == 8766:
+                if self.control: self.send({'t': 'nav', 'k': 'back'})  # right-click = Android Back
+            else:
+                self.pointer('rclick', event)
+
         def left_down(self, event):
             if not self.control: return
+            if self.port == 8766:
+                self.press = (self.normalized(event), time.monotonic(), event.x, event.y)
+                return
             if self.drag_mode: self.drag_start = self.normalized(event)
             else: self.pointer('click', event)
 
         def left_up(self, event):
+            if self.control and self.port == 8766:
+                press, self.press = getattr(self, 'press', None), None
+                end = self.normalized(event)
+                if not press or not press[0] or not end: return
+                start, t0, x0, y0 = press
+                held = time.monotonic() - t0
+                if ((event.x - x0) ** 2 + (event.y - y0) ** 2) ** 0.5 > 8:
+                    ms = int(max(120, min(1500, held * 1000)))
+                    self.send({'t': 'drag', 'x': start[0], 'y': start[1], 'x2': end[0], 'y2': end[1], 'ms': ms})
+                elif held > 0.55:
+                    self.send({'t': 'rclick', 'x': start[0], 'y': start[1]})
+                else:
+                    self.send({'t': 'click', 'x': start[0], 'y': start[1]})
+                return
             if not self.control or not self.drag_mode: return
             start, end = self.drag_start, self.normalized(event)
             self.drag_start = None
