@@ -2,7 +2,7 @@
 
 **Prototype, not a production security product.** This source recreates the intended 2.1 changes on top of the supplied 2.0 project. Version 2.0 used unencrypted HTTP and must not be considered secure. The new protocol requires TLS and a manually verified full SHA-256 certificate fingerprint; it is not compatible with 2.0. Update every device.
 
-No Windows EXE, installer or Android APK is included: this environment had neither Windows build tooling nor an Android SDK/Gradle. The source has not been compiled or tested on those platforms. Do not rely on it for sensitive content until the builds, all four device pairings, and the security behavior have been independently tested.
+No Windows EXE, installer or Android APK is included in this ZIP. The supplied GitHub Actions logs show an Android debug APK built and uploaded successfully for the previous source revision. The Windows job passed TLS checks but stopped before building when two static tests used Windows' default text encoding; this ZIP fixes those reads to use UTF-8. The corrected Windows workflow has not been rerun, so its EXE and installer remain unverified. Neither app has been tested on real devices. Do not rely on this prototype for sensitive content until builds, all four device pairings, and security behavior have been independently tested.
 
 ## Supported paths in the source
 
@@ -58,7 +58,18 @@ Internet is needed for Gradle and dependencies. The debug APK is signed with a d
 
 ### GitHub Actions
 
-Push the project to your repository and choose **Actions > Build ScreenBridge > Run workflow**. The workflow attempts a Windows PyInstaller EXE and Inno Setup installer, plus an Android debug APK. Download the artifacts only after confirming the run succeeds. Tagging `v*` also triggers the inherited release job and requires write permission. The Windows artifacts are **unsigned** unless you add a separate signing process.
+Push the project to your repository and choose **Actions > Build ScreenBridge > Run workflow**. The workflow attempts a Windows PyInstaller EXE and Inno Setup installer, plus an Android debug APK. Download the artifacts only after confirming the run succeeds. Tagging `v*` also triggers the inherited release job and requires write permission. The Windows artifacts are **unsigned** unless you add a separate signing process. The earlier Android debug artifact is available at https://github.com/oryvexofficial/OryvexRemote/actions/runs/43277386041/artifacts/13970582683 (GitHub sign-in and permission may be required).
+
+To update an existing checkout, copy this ZIP's project files into the checkout, preserving the existing `.git` directory, then:
+
+```powershell
+git status
+git add .
+git commit -m "Fix Windows test encoding"
+git push
+```
+
+Review `git status` before adding files. For a new empty repository, run `git init`, configure `git config user.name "oryvexofficial"` and `git config user.email "oryvex_official@proton.me"`, commit the files, set the `main` branch and add the remote `https://github.com/oryvexofficial/OryvexRemote.git` before pushing. GitHub authentication is separate from the commit author settings.
 
 ## Download warning and verification
 
@@ -68,7 +79,7 @@ For the **actual** generated EXE and installer, record the file hashes with `Get
 
 ## Testing performed and remaining
 
-Run `python tests/test_tls_integration.py` and `python tests/test_project_static.py` from the project root. The first uses mocked Windows screen/input calls and real loopback TLS to exercise certificate mismatch, PIN, lockout, approval, input gating, stream revocation and shutdown. The second checks Android XML/resources, security wiring and font hashes statically. These do **not** compile Android or test actual capture, real input, Android Keystore, UI, accessibility, performance or cross-platform behavior.
+Run `python tests/test_tls_integration.py` and `python tests/test_project_static.py` from the project root. The first uses mocked Windows screen/input calls and real loopback TLS to exercise certificate mismatch, PIN, lockout, approval, input gating, stream revocation and shutdown. The second checks Android XML/resources, security wiring and font hashes statically. The encoding fix was tested with a simulated Windows cp1252 default, not on a Windows runner. GitHub's earlier Android debug build compiled successfully but has not been device-tested. None of these checks test actual capture, real input, Android Keystore, UI, accessibility, performance or cross-platform behavior.
 
 Before release, test Windows-to-Windows, Windows-to-Android, Android-to-Windows and Android-to-Android on real devices. For each, check frame display, wrong/full/changed fingerprint, wrong PIN and lockout, stop/revoke, network interruption and reconnect, orientation, permissions and long-running sessions. Specifically verify Android host TLS handshakes on each Android version and manufacturer. Verify Windows remote input only after explicit host and viewer opt-in.
 

@@ -20,10 +20,10 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r windows/requirements.txt pyinstaller
-      - name: Run TLS and source checks
-        run: |
-          python tests/test_tls_integration.py
-          python tests/test_project_static.py
+      - name: Run TLS checks
+        run: python tests/test_tls_integration.py
+      - name: Run source checks
+        run: python tests/test_project_static.py
       - name: Build EXE
         run: pyinstaller --onefile --noconsole --name ScreenBridge --icon windows/icon.ico --add-data "windows/icon.png;." --add-data "windows/Manrope-Regular.ttf;." --add-data "windows/Manrope-Bold.ttf;." windows/main.py
       - name: Install Inno Setup
