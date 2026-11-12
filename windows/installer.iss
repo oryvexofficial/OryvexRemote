@@ -23,7 +23,7 @@ Name: "{group}\ScreenBridge"; Filename: "{app}\ScreenBridge.exe"
 Name: "{autodesktop}\ScreenBridge"; Filename: "{app}\ScreenBridge.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""ScreenBridge"" dir=in action=allow protocol=TCP localport=8765 profile=private"; Flags: runhidden
+Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""ScreenBridge"" dir=in action=allow protocol=TCP localport=8765 profile=any"; Flags: runhidden
 Filename: "{app}\ScreenBridge.exe"; Description: "Launch ScreenBridge"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]

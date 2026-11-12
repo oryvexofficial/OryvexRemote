@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_desc">Lets ScreenBridge tap, swipe, type and press Back/Home on this phone when you turn on Remote control and a viewer with the PIN is connected.</string>
+</resources>

@@ -11,6 +11,13 @@ No Windows EXE, installer or Android APK is included in this ZIP. An earlier And
 - The Windows viewer supports pointer movement, click, double-click, right-click, scrolling, text entry and a similar straight-line drag mode. Pointer rendering is overlaid on Windows screen frames as a simple arrow, not an exact representation of the native cursor shape.
 - For Android-to-Windows viewing, the Windows viewer now requests `/ping` first, reports common connection errors, and bounds MJPEG parsing. The Android host has an adjusted Android Keystore TLS configuration and key manager, sends stream headers promptly, repeats static frames as keepalives, and reports some startup failures on the phone. These are **attempted compatibility fixes**, not a confirmed diagnosis: the original device error was generic, and the changes have not been tested on real devices. Android sharing remains view-only.
 
+## 2.2 changes: two-way control
+
+- **Phone controls Windows** (already there, now faster): HTTP keep-alive removes a TLS handshake per mouse move. Windows firewall rule now covers Public networks too; use **Diagnose / repair connection** in the PC app.
+- **Windows controls the phone** (new): on the phone tap **Remote control: OFF**, enable the *ScreenBridge remote control* accessibility service in Settings, come back and tap again (needs phone sharing running). Click Control in the Windows viewer. Click = tap, right-click = long press, drag = swipe, wheel = scroll, Back/Home/Recents and Type buttons.
+- Phone-to-phone control uses the same path (Android host, Android viewer).
+- Limits: Android blocks input on the lock screen, some banking apps and secure screens. Windows cannot be controlled on UAC/admin windows unless ScreenBridge runs as administrator. Not compiled or tested on devices here.
+
 ## Supported paths in the source
 
 | Sharing host | Viewer | Intended behavior, not yet device-verified |

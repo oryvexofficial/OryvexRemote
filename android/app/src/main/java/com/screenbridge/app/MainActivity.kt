@@ -15,6 +15,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.provider.Settings
 import android.os.Environment
 import android.os.SystemClock
 import android.provider.MediaStore
@@ -98,6 +99,8 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lastBmp: Bitmap? = null
     private var lastMove = 0L
     private var lastScrollY = 0f
+    private var swipeStart: Pair<Double, Double>? = null
+    private var swipePx = Pair(0f, 0f)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -152,6 +155,13 @@ class MainActivity : AppCompatActivity() {
                 .setItems(labels) { _, which -> send(JSONObject().put("t", "shortcut").put("k", keys[which])) }
                 .setNegativeButton("Cancel", null).show()
         }
+        for ((id, key) in listOf(R.id.btnBack to "back", R.id.btnHome to "home", R.id.btnRecents to "recents")) {
+            findViewById<Button>(id).setOnClickListener {
+                if (port != 8766) { toast("Back, Home and Recents work on Android hosts only"); return@setOnClickListener }
+                if (!control) { toast("Turn Control ON first"); return@setOnClickListener }
+                send(JSONObject().put("t", "nav").put("k", key))
+            }
+        }
         findViewById<Button>(R.id.btnKeyboard).setOnClickListener { typeDialog() }
         findViewById<Button>(R.id.btnEnter).setOnClickListener { send(JSONObject().put("t", "key").put("k", "enter")) }
         findViewById<Button>(R.id.btnEsc).setOnClickListener { send(JSONObject().put("t", "key").put("k", "esc")) }
@@ -174,6 +184,7 @@ class MainActivity : AppCompatActivity() {
         shareBtn = findViewById(R.id.shareBtn)
         shareInfo = findViewById(R.id.shareInfo)
         shareBtn.setOnClickListener { toggleShare() }
+        findViewById<Button>(R.id.hostCtlBtn).setOnClickListener { toggleHostControl() }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (viewerPanel.visibility == View.VISIBLE) disconnect() else finish()
@@ -200,10 +211,7 @@ class MainActivity : AppCompatActivity() {
                 val c = url("/ping"); c.connectTimeout = 5000; c.readTimeout = 70000
                 when (c.responseCode) {
                     200 -> {
-                        controlAllowed = if (port == 8765) {
-                            val j = JSONObject(c.inputStream.bufferedReader().readText())
-                            j.optBoolean("control", false)
-                        } else false
+                        controlAllowed = JSONObject(c.inputStream.bufferedReader().readText()).optBoolean("control", false)
                     }
                     401 -> msg = "Wrong PIN"
                     403 -> msg = "The other device denied access"
@@ -236,7 +244,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkControl() {
-        if (port != 8765) { toast("Android hosts are view-only"); return }
         val checkGen = gen
         toast("Checking Windows control permission…")
         thread {
@@ -255,7 +262,7 @@ class MainActivity : AppCompatActivity() {
                 controlAllowed = allowed
                 control = allowed
                 findViewById<Button>(R.id.btnControl).text = if (allowed) "Control: ON" else "Control: OFF"
-                toast(message ?: if (allowed) "Control enabled" else "On the PC, enable Allow remote mouse and keyboard, then tap Control again.")
+                toast(message ?: if (allowed) "Control enabled" else if (port == 8766) "On the other phone, open ScreenBridge and turn Remote control ON, then tap Control again." else "On the PC, enable Allow remote mouse and keyboard, then tap Control again.")
             }
         }
     }
@@ -267,7 +274,7 @@ class MainActivity : AppCompatActivity() {
         pendingMove.set(null)
         dragMode = false; dragStart = null
         findViewById<Button>(R.id.btnDrag).text = "Drag: OFF"
-        findViewById<Button>(R.id.btnControl).text = "🖱 Control: OFF"
+        findViewById<Button>(R.id.btnControl).text = "Control: OFF"
         if (immersive) toggleImmersive()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         landscape = false
@@ -354,13 +361,30 @@ class MainActivity : AppCompatActivity() {
         projLauncher.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent())
     }
 
+    private fun toggleHostControl() {
+        if (ShareService.allowControl) {
+            ShareService.allowControl = false
+        } else if (ControlService.instance == null) {
+            AlertDialog.Builder(this).setTitle("Allow remote control")
+                .setMessage("Android needs you to enable the ScreenBridge remote control accessibility service.\n\nSettings > Accessibility > Installed apps (or Downloaded apps) > ScreenBridge remote control > turn ON.\n\nIf the switch is greyed out: Settings > Apps > ScreenBridge > menu (three dots) > Allow restricted settings.")
+                .setPositiveButton("Open settings") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                .setNegativeButton("Cancel", null).show()
+        } else if (!ShareService.running) {
+            toast("Start phone sharing first")
+        } else ShareService.allowControl = true
+        updateShare()
+    }
+
     private fun updateShare() {
+        val ctlOn = ShareService.allowControl && ControlService.instance != null
+        if (ShareService.allowControl && ControlService.instance == null) ShareService.allowControl = false
+        findViewById<Button>(R.id.hostCtlBtn).text = if (ctlOn) "Remote control: ON (tap to turn off)" else "Remote control: OFF"
         if (ShareService.running) {
-            shareInfo.text = "Sharing now. Choose Android on the viewer.\nIP: ${localIp()}   PIN: ${ShareService.pin}\nReserve this IP in your router for a fixed address."
+            shareInfo.text = "Sharing now. Choose Android on the viewer.\nIP: ${localIp()}   PIN: ${ShareService.pin}\n" + (if (ctlOn) "Viewers can operate this phone." else "View only until you turn Remote control on.")
             shareBtn.text = "Stop sharing"
         } else {
             shareInfo.text = if (ShareService.lastError.isNotEmpty()) ShareService.lastError
-                else "Your local IP: ${localIp()}\nShare this screen on Windows or Android. View only."
+                else "Your local IP: ${localIp()}\nShare this screen on Windows or Android."
             shareBtn.text = "Share phone screen  →"
         }
     }
@@ -503,6 +527,26 @@ class MainActivity : AppCompatActivity() {
                 return@setOnTouchListener true
             }
             gd.onTouchEvent(ev)
+            if (port == 8766) {
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { swipeStart = norm(ev); swipePx = Pair(ev.x, ev.y) }
+                    MotionEvent.ACTION_POINTER_DOWN -> swipeStart = null
+                    MotionEvent.ACTION_UP -> {
+                        val st = swipeStart; val en = norm(ev)
+                        if (st != null && en != null && Math.hypot((ev.x - swipePx.first).toDouble(), (ev.y - swipePx.second).toDouble()) > 40) {
+                            send(JSONObject().put("t", "drag").put("x", st.first).put("y", st.second).put("x2", en.first).put("y2", en.second))
+                        }
+                        swipeStart = null
+                    }
+                    MotionEvent.ACTION_MOVE -> if (ev.pointerCount == 2) {
+                        val y = (ev.getY(0) + ev.getY(1)) / 2
+                        val d = y - lastScrollY
+                        if (abs(d) > 24) { send(JSONObject().put("t", "scroll").put("dy", if (d > 0) 3 else -3)); lastScrollY = y }
+                    }
+                }
+                if (ev.actionMasked == MotionEvent.ACTION_POINTER_DOWN && ev.pointerCount == 2) lastScrollY = (ev.getY(0) + ev.getY(1)) / 2
+                return@setOnTouchListener true
+            }
             when (ev.actionMasked) {
                 MotionEvent.ACTION_POINTER_DOWN -> lastScrollY = (ev.getY(0) + ev.getY(1)) / 2
                 MotionEvent.ACTION_MOVE -> if (ev.pointerCount == 1) {

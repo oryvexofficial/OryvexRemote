@@ -73,6 +73,8 @@ def build_app(m):
             self.control_btn = tk.Button(tool, text='Control: off', command=self.toggle_control, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2'); self.control_btn.pack(side='left', padx=3)
             self.drag_btn = tk.Button(tool, text='Drag: off', command=self.toggle_drag, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2'); self.drag_btn.pack(side='left', padx=3)
             tk.Button(tool, text='Type', command=self.type_text, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=3)
+            for label, key in (('Back', 'back'), ('Home', 'home'), ('Recents', 'recents')):
+                tk.Button(tool, text=label, command=lambda k=key: self.nav(k), bg=PAPER, fg=INK, relief='flat', padx=8, pady=5, cursor='hand2').pack(side='left', padx=2)
             tk.Button(tool, text='Screenshot', command=self.shot, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=3)
             tk.Button(tool, text='Disconnect', command=self.disconnect, bg=PAPER, fg=ACCENT_DARK, relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=3)
             self.canvas = tk.Canvas(self.win, bg=DARK, highlightthickness=0, cursor='crosshair'); self.canvas.pack(fill='both', expand=True, padx=24, pady=(0, 24))
@@ -114,7 +116,7 @@ def build_app(m):
                 with open_lan(host, port, '/ping', pin, timeout=70 if port == 8765 else 15) as r:
                     info = json.loads(r.read(8192))
                 if gen != self.gen: return
-                self.control_allowed = port == 8765 and bool(info.get('control', False))
+                self.control_allowed = bool(info.get('control', False))
                 self.say('Connected. Waiting for the first frame...')
                 conn = open_lan(host, port, '/stream', pin, timeout=15)
                 if gen != self.gen:
@@ -170,8 +172,8 @@ def build_app(m):
                 self.control = False
                 self.control_btn.config(text='Control: off')
                 return
-            if not self.connection or self.port != 8765:
-                return self.say('Connect to a Windows host first. Android hosts are view-only.')
+            if not self.connection:
+                return self.say('Connect to a device first.')
             host, port, pin, gen = self.host, self.port, self.session_pin, self.gen
             self.say('Checking whether the Windows host permits control...')
             def check():
@@ -185,7 +187,7 @@ def build_app(m):
                     self.control_allowed = allowed
                     self.control = allowed
                     self.control_btn.config(text='Control: on' if allowed else 'Control: off')
-                    self.say('Control enabled.' if allowed else 'On the PC, check Allow remote mouse and keyboard, then tap Control again.')
+                    self.say('Control enabled.' if allowed else ('On the phone, turn on Remote control in ScreenBridge, then click Control again.' if port == 8766 else 'On the PC, check Allow remote mouse and keyboard, then click Control again.'))
                 self.win.after(0, finish)
             threading.Thread(target=check, daemon=True).start()
 
@@ -222,7 +224,7 @@ def build_app(m):
                 self.send({'t': 'drag', 'x': start[0], 'y': start[1], 'x2': end[0], 'y2': end[1]})
 
         def move_pointer(self, event):
-            if not self.control or self.drag_mode or time.monotonic() - self.last_move < 0.05: return
+            if not self.control or self.drag_mode or self.port == 8766 or time.monotonic() - self.last_move < 0.05: return
             point = self.normalized(event)
             if point is None or not self.move_busy.acquire(blocking=False): return
             self.last_move = time.monotonic()
@@ -244,6 +246,11 @@ def build_app(m):
                     with open_lan(host, port, '/input', pin, data=json.dumps(payload).encode(), timeout=3): pass
                 except Exception: self.say('Could not send control input.')
             threading.Thread(target=post, daemon=True).start()
+
+        def nav(self, key):
+            if self.port != 8766: return self.say('Back, Home and Recents work on Android hosts only.')
+            if not self.control: return self.say('Turn control on first.')
+            self.send({'t': 'nav', 'k': key})
 
         def type_text(self):
             if not self.control: return self.say('Turn control on first.')
@@ -330,6 +337,7 @@ def build_app(m):
             self.ctl = tk.BooleanVar(value=False)
             tk.Checkbutton(left, text='Allow remote mouse and keyboard', variable=self.ctl, command=self.toggle_ctl, bg=PAPER, fg=INK, selectcolor=PAPER, activebackground=PAPER, font=(FONT, 9), anchor='w').pack(fill='x', pady=(4, 10))
             self.main_btn = tk.Button(left, text='Start sharing', command=self.toggle, bg=ACCENT, fg='white', activebackground=ACCENT_DARK, activeforeground='white', relief='flat', font=(FONT, 11, 'bold'), pady=12, cursor='hand2'); self.main_btn.pack(fill='x')
+            tk.Button(left, text='Diagnose / repair connection', command=self.diagnose, bg=PAPER, fg=ACCENT_DARK, activebackground=TINT, relief='flat', font=(FONT, 9, 'bold'), pady=7, cursor='hand2').pack(fill='x')
             tk.Button(left, text='Copy IP and PIN', command=self.copy_details, bg=PAPER, fg=ACCENT_DARK, activebackground=TINT, relief='flat', font=(FONT, 9, 'bold'), pady=7, cursor='hand2').pack(fill='x')
             tk.Label(right, text='CONNECT TO A DEVICE', font=(FONT, 9, 'bold'), bg=DARK, fg='#ffac96').pack(anchor='w')
             tk.Label(right, text='See their screen.', font=(FONT, 19, 'bold'), bg=DARK, fg='white').pack(anchor='w', pady=(14, 8))
@@ -344,6 +352,43 @@ def build_app(m):
             m.S.ask = self.ask
             r.protocol('WM_DELETE_WINDOW', self.quit)
             r.after(300, self.first_run)
+
+        def diagnose(self):
+            import subprocess
+            lines = []
+            ip = m.local_ip()
+            lines.append(f'PC address: {ip}' + ('  (PROBLEM: no network)' if ip.startswith('127.') else ''))
+            if not ip.startswith(('192.168.', '10.', '172.')):
+                lines.append('  Warning: not a normal private LAN address (VPN or odd adapter?). Phone must be on the same Wi-Fi.')
+            lines.append('Sharing: ' + ('ON' if m.S.running else 'OFF (click Start sharing first)'))
+            if m.S.running:
+                try:
+                    s = socket.create_connection((ip, m.PORT), timeout=3); s.close()
+                    lines.append(f'Port {m.PORT} reachable on this PC: yes')
+                except Exception as e:
+                    lines.append(f'Port {m.PORT} reachable on this PC: NO ({type(e).__name__})')
+            try:
+                out = subprocess.run(['netsh', 'advfirewall', 'firewall', 'show', 'rule', 'name=ScreenBridge'],
+                                     capture_output=True, text=True, timeout=10, creationflags=0x08000000).stdout
+                has = 'Rule Name' in out
+                prof = [l.split(':', 1)[1].strip() for l in out.splitlines() if l.strip().startswith('Profiles:')]
+                lines.append('Firewall rule: ' + ('found, profiles ' + ', '.join(prof) if has else 'MISSING'))
+                needs_fix = (not has) or any(p.lower() != 'domain,private,public' and p.lower() != 'any' for p in prof)
+            except Exception:
+                lines.append('Firewall rule: could not check'); needs_fix = True
+            try:
+                admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+            except Exception:
+                admin = False
+            lines.append('Running as administrator: ' + ('yes' if admin else 'no (cannot control UAC prompts or admin windows; right-click > Run as administrator)'))
+            lines.append('Remote mouse/keyboard allowed: ' + ('yes' if m.S.allow_control else 'NO (tick the checkbox)'))
+            lines.append('Approved devices: ' + (', '.join(sorted(m.S.approved)) or 'none yet'))
+            text = '\n'.join(lines)
+            if needs_fix and messagebox.askyesno('Diagnostics', text + '\n\nRepair firewall rule for ALL networks (Public too)? Windows will ask for administrator permission.', parent=self.root):
+                ctypes.windll.shell32.ShellExecuteW(None, 'runas', 'cmd.exe',
+                    f'/c netsh advfirewall firewall delete rule name="ScreenBridge" & netsh advfirewall firewall add rule name="ScreenBridge" dir=in action=allow protocol=TCP localport={m.PORT} profile=any', None, 0)
+            elif not needs_fix:
+                messagebox.showinfo('Diagnostics', text, parent=self.root)
 
         def copy_details(self):
             self.root.clipboard_clear()

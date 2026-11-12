@@ -218,6 +218,7 @@ def frames(q, fps, width):
 
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     def log_message(self, *a):
         pass
 
@@ -274,7 +275,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
         try:
             for jpg in frames(q, fps, w):
                 if generation != S.generation or viewer not in S.approved:
@@ -375,7 +378,7 @@ class App:
             self.quit(); return
         if messagebox.askyesno("Windows Firewall", "Allow ScreenBridge through Windows Firewall (private networks)?\n"
                                "Windows will ask for administrator permission.", parent=self.root):
-            args = f'advfirewall firewall add rule name="{APP}" dir=in action=allow protocol=TCP localport={PORT} profile=private'
+            args = f'advfirewall firewall add rule name="{APP}" dir=in action=allow protocol=TCP localport={PORT} profile=any'
             ctypes.windll.shell32.ShellExecuteW(None, "runas", "netsh", args, None, 0)
         self.cfg["consented"] = True; save_cfg(self.cfg)
 

@@ -82,12 +82,16 @@
                 <TextView android:id="@+id/shareInfo" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:layout_marginTop="8dp"
                     android:textIsSelectable="true"
-                    android:text="Show this screen on Windows or Android. View only."
+                    android:text="Show this screen on Windows or Android. Turn on Remote control to let them operate this phone."
                     android:textColor="#C0D2C9" android:textSize="14sp" />
                 <com.google.android.material.button.MaterialButton android:id="@+id/shareBtn"
                     android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="14dp"
                     android:text="Share phone screen  →" android:textAllCaps="false" android:textSize="15sp"
                     android:textColor="#192B28" app:cornerRadius="12dp" app:backgroundTint="#FFF5EF" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/hostCtlBtn"
+                    android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="10dp"
+                    android:text="Remote control: OFF" android:textAllCaps="false" android:textSize="15sp"
+                    android:textColor="#FFFFFF" app:cornerRadius="12dp" app:backgroundTint="#3A5A52" />
             </LinearLayout>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="18dp" android:text="PRIVATE LAN ONLY  •  HOST IDENTITY NOT VERIFIED\nReserve device IPs in your router to keep them fixed."
@@ -109,6 +113,9 @@
             <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:padding="6dp">
                 <Button android:id="@+id/btnControl" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Control: OFF" />
                 <Button android:id="@+id/btnDrag" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Drag: OFF" />
+                <Button android:id="@+id/btnBack" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Back" />
+                <Button android:id="@+id/btnHome" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Home" />
+                <Button android:id="@+id/btnRecents" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Recents" />
                 <Button android:id="@+id/btnShortcuts" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Shortcuts" />
                 <Button android:id="@+id/btnKeyboard" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Type" />
                 <Button android:id="@+id/btnEnter" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Enter" />
