@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.ConnectivityManager
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
 import java.net.Inet4Address
@@ -36,9 +37,14 @@ import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLException
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.util.Locale
 import kotlin.concurrent.thread
 import kotlin.math.abs
@@ -66,19 +72,25 @@ class MainActivity : AppCompatActivity() {
     private val projLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val d = r.data
         if (r.resultCode == RESULT_OK && d != null) {
+            ShareService.lastError = ""
             ShareService.pin = String.format(Locale.US, "%08d", SecureRandom().nextInt(100000000))
             startForegroundService(Intent(this, ShareService::class.java).putExtra("code", r.resultCode).putExtra("data", d))
-            shareBtn.postDelayed({ updateShare() }, 700)
+            shareInfo.text = "Starting phone sharing…"
+            for (delay in listOf(700L, 2000L, 5000L)) shareBtn.postDelayed({ updateShare() }, delay)
         } else toast("Screen capture permission denied")
     }
     private val notifLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { launchProjection() }
 
     private val io = Executors.newSingleThreadExecutor()
+    private val pendingMove = AtomicReference<JSONObject?>(null)
+    private val moveScheduled = AtomicBoolean(false)
     private var ip = ""
     private var pin = ""
     private var quality = 1
     private var control = false
     private var controlAllowed = false
+    private var dragMode = false
+    private var dragStart: Pair<Double, Double>? = null
     private var landscape = false
     private var immersive = false
     @Volatile private var running = false
@@ -121,9 +133,24 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnControl).setOnClickListener {
-            if (!controlAllowed) { toast("Control is disabled on the PC"); return@setOnClickListener }
-            control = !control
-            (it as Button).text = if (control) "🖱 Control: ON" else "🖱 Control: OFF"
+            if (control) {
+                control = false
+                (it as Button).text = "Control: OFF"
+            } else checkControl()
+        }
+        findViewById<Button>(R.id.btnDrag).setOnClickListener {
+            dragMode = !dragMode
+            dragStart = null
+            (it as Button).text = if (dragMode) "Drag: ON" else "Drag: OFF"
+            toast(if (dragMode) "Touch the start, slide, then lift to drag" else "Normal pointer mode")
+        }
+        findViewById<Button>(R.id.btnShortcuts).setOnClickListener {
+            if (!control) { toast("Turn Control ON first"); return@setOnClickListener }
+            val labels = arrayOf("Copy", "Paste", "Cut", "Select all", "Undo", "Alt + Tab", "Windows + D")
+            val keys = arrayOf("copy", "paste", "cut", "select_all", "undo", "alt_tab", "win_d")
+            AlertDialog.Builder(this).setTitle("Windows shortcuts")
+                .setItems(labels) { _, which -> send(JSONObject().put("t", "shortcut").put("k", keys[which])) }
+                .setNegativeButton("Cancel", null).show()
         }
         findViewById<Button>(R.id.btnKeyboard).setOnClickListener { typeDialog() }
         findViewById<Button>(R.id.btnEnter).setOnClickListener { send(JSONObject().put("t", "key").put("k", "enter")) }
@@ -185,7 +212,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 c.disconnect()
             } catch (e: Exception) {
-                msg = "Connection failed. Check the IP, Wi-Fi and sharing."
+                msg = when (e) {
+                    is SocketTimeoutException -> "Timed out. Check sharing, Wi-Fi and firewall."
+                    is ConnectException -> "Connection refused. Check host IP, type and sharing."
+                    is SSLException -> "TLS handshake failed. Update both apps and restart sharing."
+                    else -> "Connection failed (${e.javaClass.simpleName}). Check IP and sharing."
+                }
             }
             runOnUiThread {
                 connectBtn.isEnabled = true
@@ -203,9 +235,38 @@ class MainActivity : AppCompatActivity() {
         startStream()
     }
 
+    private fun checkControl() {
+        if (port != 8765) { toast("Android hosts are view-only"); return }
+        val checkGen = gen
+        toast("Checking Windows control permission…")
+        thread {
+            var message: String? = null
+            var allowed = false
+            var c: HttpURLConnection? = null
+            try {
+                c = url("/ping"); c.connectTimeout = 5000; c.readTimeout = 7000
+                if (c.responseCode == 200) allowed = JSONObject(c.inputStream.bufferedReader().readText()).optBoolean("control", false)
+                else message = "Could not check permission (HTTP ${c.responseCode})"
+            } catch (_: Exception) {
+                message = "Cannot check permission. Reconnect and try again."
+            } finally { c?.disconnect() }
+            runOnUiThread {
+                if (!running || checkGen != gen) return@runOnUiThread
+                controlAllowed = allowed
+                control = allowed
+                findViewById<Button>(R.id.btnControl).text = if (allowed) "Control: ON" else "Control: OFF"
+                toast(message ?: if (allowed) "Control enabled" else "On the PC, enable Allow remote mouse and keyboard, then tap Control again.")
+            }
+        }
+    }
+
     private fun disconnect() {
         running = false; gen++
         control = false
+        controlAllowed = false
+        pendingMove.set(null)
+        dragMode = false; dragStart = null
+        findViewById<Button>(R.id.btnDrag).text = "Drag: OFF"
         findViewById<Button>(R.id.btnControl).text = "🖱 Control: OFF"
         if (immersive) toggleImmersive()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -298,15 +359,24 @@ class MainActivity : AppCompatActivity() {
             shareInfo.text = "Sharing now. Choose Android on the viewer.\nIP: ${localIp()}   PIN: ${ShareService.pin}\nReserve this IP in your router for a fixed address."
             shareBtn.text = "Stop sharing"
         } else {
-            shareInfo.text = "Your local IP: ${localIp()}\nShare this screen on Windows or Android. View only."
+            shareInfo.text = if (ShareService.lastError.isNotEmpty()) ShareService.lastError
+                else "Your local IP: ${localIp()}\nShare this screen on Windows or Android. View only."
             shareBtn.text = "Share phone screen  →"
         }
     }
 
     private fun localIp(): String {
-        val addrs = NetworkInterface.getNetworkInterfaces().toList().flatMap { n -> n.inetAddresses.toList().map { n.name to it } }
-            .filter { it.second is Inet4Address && !it.second.isLoopbackAddress }
-        return (addrs.firstOrNull { it.first.startsWith("wlan") } ?: addrs.firstOrNull())?.second?.hostAddress ?: "?"
+        return try {
+            val addrs = NetworkInterface.getNetworkInterfaces().toList()
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { n -> n.inetAddresses.toList().map { n.name to it } }
+                .filter { it.second is Inet4Address && !it.second.isLoopbackAddress && !it.second.isLinkLocalAddress }
+            val wifi = addrs.firstOrNull { it.first.startsWith("wlan") || it.first.startsWith("ap") }
+            val cm = getSystemService(ConnectivityManager::class.java)
+            val active = cm.getLinkProperties(cm.activeNetwork)?.linkAddresses
+                ?.map { it.address }?.firstOrNull { it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress }
+            wifi?.second?.hostAddress ?: active?.hostAddress ?: addrs.firstOrNull()?.second?.hostAddress ?: "?"
+        } catch (_: Exception) { "?" }
     }
 
     // ----- tools -----
@@ -347,16 +417,49 @@ class MainActivity : AppCompatActivity() {
     // ----- remote control -----
     private fun send(j: JSONObject) {
         if (!control || !controlAllowed) return
+        val myGen = gen
+        if (j.optString("t") == "move") {
+            pendingMove.set(j)
+            scheduleMove(myGen)
+        } else {
+            // Do not deliver a stale pointer move after a click or completed drag.
+            pendingMove.set(null)
+            io.execute { sendNow(j, myGen) }
+        }
+    }
+
+    private fun scheduleMove(myGen: Int) {
+        if (!moveScheduled.compareAndSet(false, true)) return
         io.execute {
             try {
-                val c = url("/input")
-                c.requestMethod = "POST"; c.doOutput = true
-                c.connectTimeout = 3000; c.readTimeout = 3000
-                c.outputStream.use { it.write(j.toString().toByteArray()) }
-                c.responseCode
-                c.disconnect()
-            } catch (_: Exception) { }
+                pendingMove.getAndSet(null)?.let { sendNow(it, myGen) }
+            } finally {
+                moveScheduled.set(false)
+                if (pendingMove.get() != null && running && control) scheduleMove(gen)
+            }
         }
+    }
+
+    private fun sendNow(j: JSONObject, myGen: Int) {
+        if (!running || gen != myGen || !control || !controlAllowed) return
+        var c: HttpURLConnection? = null
+        try {
+            c = url("/input")
+            c.requestMethod = "POST"; c.doOutput = true
+            c.connectTimeout = 3000; c.readTimeout = 4000
+            c.outputStream.use { it.write(j.toString().toByteArray()) }
+            if (c.responseCode == 403) runOnUiThread {
+                if (gen == myGen) {
+                    control = false; controlAllowed = false
+                    findViewById<Button>(R.id.btnControl).text = "Control: OFF"
+                    toast("Windows control disabled. Enable it on the PC and tap Control again.")
+                }
+            }
+        } catch (_: Exception) {
+            if (j.optString("t") != "move") runOnUiThread {
+                if (gen == myGen) toast("Could not send remote input. Check your connection.")
+            }
+        } finally { c?.disconnect() }
     }
 
     private fun norm(ev: MotionEvent): Pair<Double, Double>? {
@@ -383,6 +486,22 @@ class MainActivity : AppCompatActivity() {
         })
         screen.setOnTouchListener { _, ev ->
             if (!control) return@setOnTouchListener false
+            if (dragMode) {
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> dragStart = norm(ev)
+                    MotionEvent.ACTION_UP -> {
+                        val start = dragStart
+                        val end = norm(ev)
+                        if (start != null && end != null) {
+                            send(JSONObject().put("t", "drag").put("x", start.first).put("y", start.second)
+                                .put("x2", end.first).put("y2", end.second))
+                        }
+                        dragStart = null
+                    }
+                    MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> dragStart = null
+                }
+                return@setOnTouchListener true
+            }
             gd.onTouchEvent(ev)
             when (ev.actionMasked) {
                 MotionEvent.ACTION_POINTER_DOWN -> lastScrollY = (ev.getY(0) + ev.getY(1)) / 2

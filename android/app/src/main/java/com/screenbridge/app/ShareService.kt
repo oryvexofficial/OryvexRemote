@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.SystemClock
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.BufferedReader
 import java.net.ServerSocket
@@ -36,7 +37,9 @@ class ShareService : Service() {
     companion object {
         @Volatile var running = false
         @Volatile var pin = ""
+        @Volatile var lastError = ""
         const val PORT = 8766
+        const val TAG = "ScreenBridgeShare"
     }
 
     private var projection: MediaProjection? = null
@@ -75,6 +78,7 @@ class ShareService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null || intent.action == "stop") { stopSelf(); return START_NOT_STICKY }
+        lastError = ""
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("share", "Screen sharing", NotificationManager.IMPORTANCE_LOW))
         val stop = PendingIntent.getService(this, 0, Intent(this, ShareService::class.java).setAction("stop"), PendingIntent.FLAG_IMMUTABLE)
@@ -91,6 +95,7 @@ class ShareService : Service() {
         val data: Intent = (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra("data", Intent::class.java)
         else intent.getParcelableExtra("data")) ?: run { stopSelf(); return START_NOT_STICKY }
 
+        try {
         val mp = getSystemService(MediaProjectionManager::class.java).getMediaProjection(code, data)
         projection = mp
         mp.registerCallback(object : MediaProjection.Callback() { override fun onStop() { stopSelf() } }, null)
@@ -115,6 +120,10 @@ class ShareService : Service() {
                 frame = out.toByteArray()
                 if (bmp !== full) bmp.recycle()
                 full.recycle()
+            } catch (e: Exception) {
+                Log.e(TAG, "Screen capture failed", e)
+                lastError = "Screen capture failed (${e.javaClass.simpleName}). Stop and start sharing again."
+                stopSelf()
             } finally { img.close() }
         }, Handler(capThread.looper))
 
@@ -123,7 +132,9 @@ class ShareService : Service() {
             (ctx.serverSocketFactory.createServerSocket(PORT) as SSLServerSocket).apply {
                 enabledProtocols = arrayOf("TLSv1.2")
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "TLS server startup failed", e)
+            lastError = "Could not start secure server (${e.javaClass.simpleName}). Check port 8766 and restart sharing."
             stopSelf()
             return START_NOT_STICKY
         }
@@ -139,6 +150,12 @@ class ShareService : Service() {
             } catch (_: Exception) { }
         }
         return START_NOT_STICKY
+        } catch (e: Exception) {
+            Log.e(TAG, "Screen sharing startup failed", e)
+            lastError = "Could not start phone sharing (${e.javaClass.simpleName}). Check screen capture permission."
+            stopSelf()
+            return START_NOT_STICKY
+        }
     }
 
     private fun handle(s: Socket) {
@@ -176,19 +193,25 @@ class ShareService : Service() {
                 if (path == "/ping") {
                     out.write("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: 17\r\n\r\n{\"control\":false}".toByteArray()); return
                 }
-                out.write("HTTP/1.0 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n".toByteArray())
+                out.write("HTTP/1.0 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nCache-Control: no-store\r\n\r\n".toByteArray())
+                out.flush()
                 var last: ByteArray? = null
+                var sentAt = 0L
                 while (running) {
                     val f = frame
-                    if (f != null && f !== last) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (f != null && (f !== last || now - sentAt >= 1000)) {
                         out.write("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${f.size}\r\n\r\n".toByteArray())
                         out.write(f); out.write("\r\n".toByteArray()); out.flush()
                         last = f
+                        sentAt = now
                     }
                     Thread.sleep(50)
                 }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) {
+            if (running) Log.w(TAG, "Viewer connection ended (${e.javaClass.simpleName})")
+        }
     }
 
     override fun onDestroy() {

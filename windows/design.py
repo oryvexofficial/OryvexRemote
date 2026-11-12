@@ -5,6 +5,8 @@ import ipaddress
 import json
 import os
 import secrets
+import socket
+import ssl
 import threading
 import time
 import tkinter as tk
@@ -12,6 +14,7 @@ from tkinter import messagebox, simpledialog
 from urllib import error, request
 from PIL import Image, ImageTk
 from security import open_lan
+from mjpeg import read_frame
 
 BG = '#f1f4ed'
 PAPER = '#fcfdf9'
@@ -41,6 +44,10 @@ def build_app(m):
             self.connection = None
             self.control = False
             self.control_allowed = False
+            self.drag_mode = False
+            self.drag_start = None
+            self.last_move = 0.0
+            self.move_busy = threading.Lock()
             self.ip = tk.StringVar()
             self.pin = tk.StringVar()
             self.device = tk.StringVar(value='Android phone')
@@ -64,12 +71,15 @@ def build_app(m):
             tool = tk.Frame(self.win, bg=BG, padx=24, pady=10); tool.pack(fill='x')
             self.status = tk.Label(tool, text='Choose the device, then enter its IP and PIN.', fg=MUTED, bg=BG, font=(FONT, 9), anchor='w'); self.status.pack(side='left', fill='x', expand=True)
             self.control_btn = tk.Button(tool, text='Control: off', command=self.toggle_control, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2'); self.control_btn.pack(side='left', padx=3)
+            self.drag_btn = tk.Button(tool, text='Drag: off', command=self.toggle_drag, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2'); self.drag_btn.pack(side='left', padx=3)
             tk.Button(tool, text='Type', command=self.type_text, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=3)
             tk.Button(tool, text='Screenshot', command=self.shot, bg=PAPER, fg=INK, relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=3)
             tk.Button(tool, text='Disconnect', command=self.disconnect, bg=PAPER, fg=ACCENT_DARK, relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=3)
             self.canvas = tk.Canvas(self.win, bg=DARK, highlightthickness=0, cursor='crosshair'); self.canvas.pack(fill='both', expand=True, padx=24, pady=(0, 24))
             self.canvas.bind('<Configure>', lambda e: self.show())
-            self.canvas.bind('<Button-1>', lambda e: self.pointer('click', e))
+            self.canvas.bind('<Button-1>', self.left_down)
+            self.canvas.bind('<ButtonRelease-1>', self.left_up)
+            self.canvas.bind('<Motion>', self.move_pointer)
             self.canvas.bind('<Double-Button-1>', lambda e: self.pointer('dbl', e))
             self.canvas.bind('<Button-3>', lambda e: self.pointer('rclick', e))
             self.canvas.bind('<MouseWheel>', lambda e: self.send({'t': 'scroll', 'dy': 1 if e.delta > 0 else -1}))
@@ -101,11 +111,11 @@ def build_app(m):
         def read(self, gen, host, pin, port):
             conn = None
             try:
-                if port == 8765:
-                    with open_lan(host, port, '/ping', pin, timeout=70) as r:
-                        info = json.loads(r.read(8192))
-                    if gen != self.gen: return
-                    self.control_allowed = bool(info.get('control', False))
+                with open_lan(host, port, '/ping', pin, timeout=70 if port == 8765 else 15) as r:
+                    info = json.loads(r.read(8192))
+                if gen != self.gen: return
+                self.control_allowed = port == 8765 and bool(info.get('control', False))
+                self.say('Connected. Waiting for the first frame...')
                 conn = open_lan(host, port, '/stream', pin, timeout=15)
                 if gen != self.gen:
                     conn.close()
@@ -113,16 +123,7 @@ def build_app(m):
                 self.connection = conn
                 self.say('Connected. Host identity is not verified.')
                 while gen == self.gen:
-                    length = 0
-                    while gen == self.gen:
-                        line = conn.readline(8192)
-                        if not line: raise EOFError()
-                        if line.lower().startswith(b'content-length:'):
-                            length = int(line.split(b':', 1)[1].strip())
-                        if not line.strip() and length: break
-                    if length < 1 or length > 12000000: raise ValueError('Invalid frame')
-                    data = conn.read(length)
-                    if len(data) != length: raise EOFError()
+                    data = read_frame(conn)
                     image = Image.open(io.BytesIO(data)); image.load()
                     if gen != self.gen: break
                     self.latest = image
@@ -130,9 +131,21 @@ def build_app(m):
                         self.pending = True
                         self.win.after(0, self.draw_pending)
             except error.HTTPError as e:
-                if gen == self.gen: self.say('Wrong PIN or device denied access.' if e.code in (401, 403) else f'Connection failed (HTTP {e.code}).')
-            except Exception:
-                if gen == self.gen: self.say('Connection failed. Check sharing, Wi-Fi and address.')
+                if gen == self.gen:
+                    text = {401: 'Wrong PIN.', 403: 'Host denied access.', 429: 'Too many PIN attempts. Wait 60 seconds.', 503: 'Host is not sharing.'}.get(e.code, f'Host error HTTP {e.code}.')
+                    self.say(text)
+            except Exception as exc:
+                if gen == self.gen:
+                    reason = exc.reason if isinstance(exc, error.URLError) else exc
+                    if isinstance(reason, (socket.timeout, TimeoutError)):
+                        msg = 'Timed out: check host sharing, firewall, Wi-Fi and target device type.'
+                    elif isinstance(reason, ssl.SSLError):
+                        msg = 'TLS handshake failed. Update both apps; check Android sharing is running.'
+                    elif isinstance(reason, ConnectionRefusedError):
+                        msg = 'Connection refused: host sharing is stopped, wrong IP or wrong device type.'
+                    else:
+                        msg = f'Connection failed ({type(reason).__name__}). Check IP and sharing.'
+                    self.say(msg)
             finally:
                 if conn:
                     try: conn.close()
@@ -153,16 +166,75 @@ def build_app(m):
             self.canvas.delete('all'); self.canvas.create_image(cw//2, ch//2, image=self.photo)
 
         def toggle_control(self):
-            if not self.control_allowed:
-                return self.say('Control is available only when enabled on a connected Windows PC.')
-            self.control = not self.control
-            self.control_btn.config(text='Control: on' if self.control else 'Control: off')
+            if self.control:
+                self.control = False
+                self.control_btn.config(text='Control: off')
+                return
+            if not self.connection or self.port != 8765:
+                return self.say('Connect to a Windows host first. Android hosts are view-only.')
+            host, port, pin, gen = self.host, self.port, self.session_pin, self.gen
+            self.say('Checking whether the Windows host permits control...')
+            def check():
+                try:
+                    with open_lan(host, port, '/ping', pin, timeout=5) as response:
+                        allowed = bool(json.loads(response.read(8192)).get('control', False))
+                except Exception:
+                    return self.say('Cannot check control permission. Reconnect and try again.')
+                def finish():
+                    if gen != self.gen: return
+                    self.control_allowed = allowed
+                    self.control = allowed
+                    self.control_btn.config(text='Control: on' if allowed else 'Control: off')
+                    self.say('Control enabled.' if allowed else 'On the PC, check Allow remote mouse and keyboard, then tap Control again.')
+                self.win.after(0, finish)
+            threading.Thread(target=check, daemon=True).start()
 
         def pointer(self, kind, event):
             if not self.control or not hasattr(self, 'image_box'): return
             x, y, w, h = self.image_box
             if not (x <= event.x <= x+w and y <= event.y <= y+h): return
             self.send({'t': kind, 'x': (event.x-x)/w, 'y': (event.y-y)/h})
+
+        def toggle_drag(self):
+            if not self.control:
+                return self.say('Turn control on first.')
+            self.drag_mode = not self.drag_mode
+            self.drag_start = None
+            self.drag_btn.config(text='Drag: on' if self.drag_mode else 'Drag: off')
+            self.say('Drag mode: press and release to move an item.' if self.drag_mode else 'Drag mode off.')
+
+        def normalized(self, event):
+            if not hasattr(self, 'image_box'): return None
+            x, y, w, h = self.image_box
+            if not (x <= event.x <= x+w and y <= event.y <= y+h): return None
+            return ((event.x-x)/w, (event.y-y)/h)
+
+        def left_down(self, event):
+            if not self.control: return
+            if self.drag_mode: self.drag_start = self.normalized(event)
+            else: self.pointer('click', event)
+
+        def left_up(self, event):
+            if not self.control or not self.drag_mode: return
+            start, end = self.drag_start, self.normalized(event)
+            self.drag_start = None
+            if start and end:
+                self.send({'t': 'drag', 'x': start[0], 'y': start[1], 'x2': end[0], 'y2': end[1]})
+
+        def move_pointer(self, event):
+            if not self.control or self.drag_mode or time.monotonic() - self.last_move < 0.05: return
+            point = self.normalized(event)
+            if point is None or not self.move_busy.acquire(blocking=False): return
+            self.last_move = time.monotonic()
+            host, pin, port, gen = self.host, self.session_pin, self.port, self.gen
+            def move():
+                try:
+                    if gen == self.gen and self.control:
+                        payload = json.dumps({'t': 'move', 'x': point[0], 'y': point[1]}).encode()
+                        with open_lan(host, port, '/input', pin, data=payload, timeout=3): pass
+                except Exception: pass
+                finally: self.move_busy.release()
+            threading.Thread(target=move, daemon=True).start()
 
         def send(self, payload):
             if not self.control or not self.control_allowed: return
@@ -191,6 +263,9 @@ def build_app(m):
             self.gen += 1
             self.control = False
             self.control_allowed = False
+            self.drag_mode = False
+            self.drag_start = None
+            self.drag_btn.config(text='Drag: off')
             if self.connection:
                 conn = self.connection
                 self.connection = None

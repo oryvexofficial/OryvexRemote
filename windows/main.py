@@ -1,12 +1,13 @@
 """ScreenBridge - share your Windows screen to your phone over Wi-Fi/LAN."""
-import ctypes, io, json, os, secrets, socket, sys, threading, time
+import ctypes, io, json, math, os, secrets, socket, sys, threading, time
+from ctypes import wintypes
 import tkinter as tk
 from tkinter import messagebox
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 import mss
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 import urllib.request, urllib.error
 from security import PinThrottle, server_context
 
@@ -62,7 +63,12 @@ class INPUT(ctypes.Structure):
     _fields_ = [("type", ctypes.c_ulong), ("u", _U)]
 
 VK = {"enter": 0x0D, "esc": 0x1B, "win": 0x5B, "tab": 0x09, "backspace": 0x08,
-      "left": 0x25, "up": 0x26, "right": 0x27, "down": 0x28}
+      "left": 0x25, "up": 0x26, "right": 0x27, "down": 0x28, "delete": 0x2E,
+      "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22, "space": 0x20}
+SHORTCUTS = {"copy": (0x11, 0x43), "paste": (0x11, 0x56), "cut": (0x11, 0x58),
+             "select_all": (0x11, 0x41), "undo": (0x11, 0x5A),
+             "alt_tab": (0x12, 0x09), "win_d": (0x5B, 0x44)}
+input_lock = threading.Lock()
 
 
 def press(vk):
@@ -82,10 +88,24 @@ def type_text(s):
             user32.SendInput(1, ctypes.byref(i), ctypes.sizeof(INPUT))
 
 
+def coordinate(x, extent):
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or not 0 <= x <= 1:
+        raise ValueError("invalid normalized coordinate")
+    return round(x * max(0, extent - 1))
+
+
 def handle_input(d):
+    if not isinstance(d, dict):
+        raise ValueError("invalid input")
     t = d.get("t")
-    if "x" in d:
-        user32.SetCursorPos(int(d["x"] * user32.GetSystemMetrics(0)), int(d["y"] * user32.GetSystemMetrics(1)))
+    if t not in ("move", "click", "dbl", "rclick", "scroll", "text", "key", "shortcut", "drag"):
+        raise ValueError("unknown input action")
+    if t in ("move", "click", "dbl", "rclick", "drag"):
+        width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        x, y = coordinate(d.get("x"), width), coordinate(d.get("y"), height)
+        if t == "drag":
+            end_x, end_y = coordinate(d.get("x2"), width), coordinate(d.get("y2"), height)
+        user32.SetCursorPos(x, y)
     if t == "click":
         user32.mouse_event(2, 0, 0, 0, 0); user32.mouse_event(4, 0, 0, 0, 0)
     elif t == "dbl":
@@ -94,11 +114,34 @@ def handle_input(d):
     elif t == "rclick":
         user32.mouse_event(8, 0, 0, 0, 0); user32.mouse_event(16, 0, 0, 0, 0)
     elif t == "scroll":
-        user32.mouse_event(0x0800, 0, 0, int(d.get("dy", 0)) * 120, 0)
+        dy = int(d.get("dy", 0))
+        if not -10 <= dy <= 10: raise ValueError("invalid scroll")
+        user32.mouse_event(0x0800, 0, 0, dy * 120, 0)
     elif t == "text":
-        type_text(str(d.get("s", "")))
-    elif t == "key" and d.get("k") in VK:
+        text = d.get("s")
+        if not isinstance(text, str) or len(text) > 2000: raise ValueError("invalid text")
+        type_text(text)
+    elif t == "key":
+        if d.get("k") not in VK: raise ValueError("invalid key")
         press(VK[d["k"]])
+    elif t == "shortcut":
+        if d.get("k") not in SHORTCUTS: raise ValueError("invalid shortcut")
+        modifier, key = SHORTCUTS[d["k"]]
+        user32.keybd_event(modifier, 0, 0, 0)
+        try: press(key)
+        finally: user32.keybd_event(modifier, 0, 2, 0)
+    elif t == "drag":
+        generation = S.generation
+        user32.mouse_event(2, 0, 0, 0, 0)
+        try:
+            for step in range(1, 13):
+                if not S.running or not S.allow_control or generation != S.generation:
+                    break
+                user32.SetCursorPos(round(x + (end_x - x) * step / 12),
+                                    round(y + (end_y - y) * step / 12))
+                time.sleep(0.015)
+        finally:
+            user32.mouse_event(4, 0, 0, 0, 0)
 
 
 # ---------- server ----------
@@ -155,6 +198,17 @@ def frames(q, fps, width):
             t0 = time.time()
             shot = sct.grab(mon)
             img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+            try:
+                point = wintypes.POINT()
+                if user32.GetCursorPos(ctypes.byref(point)):
+                    x, y = point.x - mon["left"], point.y - mon["top"]
+                    if 0 <= x < img.width and 0 <= y < img.height:
+                        draw = ImageDraw.Draw(img)
+                        draw.polygon([(x, y), (x, y+22), (x+6, y+16), (x+10, y+25),
+                                      (x+14, y+23), (x+10, y+14), (x+19, y+14)],
+                                     fill="white", outline="black", width=2)
+            except Exception:
+                pass
             if width and img.width > width:
                 img = img.resize((width, int(img.height * width / img.width)), Image.BILINEAR)
             buf = io.BytesIO()
@@ -245,8 +299,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not S.allow_control:
             return self.reply(403, b"control disabled")
+        generation = S.generation
         try:
-            handle_input(json.loads(body))
+            with input_lock:
+                if (not S.running or not S.allow_control or generation != S.generation
+                        or self.client_address[0] not in S.approved):
+                    return self.reply(403, b"control disabled")
+                handle_input(json.loads(body))
         except Exception:
             return self.reply(400)
         self.reply(200, b"ok")

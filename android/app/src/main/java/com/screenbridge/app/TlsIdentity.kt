@@ -5,17 +5,21 @@ import android.security.keystore.KeyProperties
 import java.math.BigInteger
 import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.PrivateKey
+import java.net.Socket
 import java.security.SecureRandom
+import java.security.Principal
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.Date
-import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.X509KeyManager
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
 import javax.security.auth.x500.X500Principal
 
 object TlsIdentity {
-    private const val ALIAS = "screenbridge-host"
+    // A new alias ensures existing restrictive key parameters are not reused.
+    private const val ALIAS = "screenbridge-host-tls-v2"
 
     @Synchronized
     fun host(): SSLContext {
@@ -24,9 +28,9 @@ object TlsIdentity {
             val gen = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore")
             gen.initialize(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_DECRYPT)
                 .setKeySize(2048)
-                .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512)
+                .setDigests(KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512)
                 .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1, KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setCertificateSubject(X500Principal("CN=ScreenBridge local host"))
                 .setCertificateSerialNumber(BigInteger(128, SecureRandom()).abs().add(BigInteger.ONE))
                 .setCertificateNotBefore(Date(System.currentTimeMillis() - 86400000L))
@@ -34,10 +38,21 @@ object TlsIdentity {
                 .build())
             gen.generateKeyPair()
         }
-        val km = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-        km.init(store, null)
+        val key = store.getKey(ALIAS, null) as PrivateKey
+        val certificate = store.getCertificate(ALIAS) as X509Certificate
+        val manager = object : X509KeyManager {
+            override fun getClientAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? = null
+            override fun chooseClientAlias(keyTypes: Array<out String>?, issuers: Array<out Principal>?, socket: Socket?): String? = null
+            override fun getServerAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? =
+                if (keyType == "RSA") arrayOf(ALIAS) else null
+            override fun chooseServerAlias(keyType: String?, issuers: Array<out Principal>?, socket: Socket?): String? =
+                if (keyType == "RSA") ALIAS else null
+            override fun getCertificateChain(alias: String?): Array<X509Certificate>? =
+                if (alias == ALIAS) arrayOf(certificate) else null
+            override fun getPrivateKey(alias: String?): PrivateKey? = if (alias == ALIAS) key else null
+        }
         val ctx = SSLContext.getInstance("TLS")
-        ctx.init(km.keyManagers, null, SecureRandom())
+        ctx.init(arrayOf(manager), null, SecureRandom())
         return ctx
     }
 

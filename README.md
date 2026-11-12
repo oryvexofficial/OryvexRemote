@@ -2,7 +2,14 @@
 
 **Prototype, not a secure or production-ready product.** At the user's request this version removes the certificate fingerprint from pairing and no longer verifies the host identity. TLS encrypts traffic only against passive listeners: an active attacker on the LAN can impersonate the host, steal the PIN, and intercept the screen or remote input. Use only on a trusted private network, never public Wi-Fi or the internet. Version 2.0 was unencrypted HTTP and is also insecure. Update both devices to this version; older versions are not compatible.
 
-No Windows EXE, installer or Android APK is included in this ZIP. The supplied GitHub Actions logs show an Android debug APK built and uploaded successfully for the previous source revision. The Windows job passed TLS checks but stopped before building when two static tests used Windows' default text encoding; this ZIP fixes those reads to use UTF-8. The corrected Windows workflow has not been rerun, so its EXE and installer remain unverified. Neither app has been tested on real devices. Do not rely on this prototype for sensitive content until builds, all four device pairings, and security behavior have been independently tested.
+No Windows EXE, installer or Android APK is included in this ZIP. An earlier Android revision built in GitHub Actions, but this updated revision has not been compiled or tested on real devices. The Windows test encoding issue from the supplied logs is fixed, but this workflow has not been rerun. Do not rely on this prototype for sensitive content until builds, all four device pairings, and security behavior have been independently tested.
+
+## This update: control and phone-to-PC
+
+- The Android viewer now rechecks the Windows host's current control permission when Control is tapped. On the PC check **Allow remote mouse and keyboard**, then on Android tap **Control: OFF**. There is no need to reconnect just because the checkbox changed. Control still starts **off** on the host and viewer.
+- When viewing a Windows host on Android, move a finger to move the Windows cursor; tap, double-tap, or long-press to left-click, double-click, or right-click; use two fingers to scroll. Tap **Drag: OFF** to enable drag mode, touch the starting point, slide to the end and lift. The host performs a short straight-line drag after release; it is not live freehand dragging. Turn drag mode off for normal pointer use. The Shortcuts menu provides Copy, Paste, Cut, Select All, Undo, Alt+Tab and Windows+D. Type opens a text dialog. The toolbar scrolls horizontally. Actual responsiveness depends on network and devices.
+- The Windows viewer supports pointer movement, click, double-click, right-click, scrolling, text entry and a similar straight-line drag mode. Pointer rendering is overlaid on Windows screen frames as a simple arrow, not an exact representation of the native cursor shape.
+- For Android-to-Windows viewing, the Windows viewer now requests `/ping` first, reports common connection errors, and bounds MJPEG parsing. The Android host has an adjusted Android Keystore TLS configuration and key manager, sends stream headers promptly, repeats static frames as keepalives, and reports some startup failures on the phone. These are **attempted compatibility fixes**, not a confirmed diagnosis: the original device error was generic, and the changes have not been tested on real devices. Android sharing remains view-only.
 
 ## Supported paths in the source
 
@@ -20,7 +27,7 @@ Windows control starts off and must be explicitly enabled on the host and viewer
 3. The host displays its current local IPv4 address and an eight-digit PIN. The devices must be on the same LAN, usually connected to the same router or hotspot, without client isolation.
 4. On the viewer choose the host type, enter the host IP and PIN, then connect. Approve the request on the Windows host. Android has no per-viewer approval. This simple pairing cannot detect an impersonated host.
 5. On Windows, use **New PIN** or **Revoke all** to invalidate existing streams; **Stop sharing** ends sharing. On Android, stop using the app or persistent notification; restarting sharing generates a new PIN.
-6. Control Windows only when the host explicitly permits it, then switch on Control in the viewer. Disable it again when finished. Android sharing is view-only.
+6. Control Windows only when the host explicitly permits it: enable **Allow remote mouse and keyboard** on the PC, then tap **Control** on the viewer. Tap it again to turn it off. If the host disables control, input is rejected. Android sharing is view-only.
 
 The PIN is a secret. Copying host details puts it on the clipboard: clear it afterward and send it only through a trusted channel. A PIN can also be visible on a shared screen. Screenshots are saved under Pictures/ScreenBridge.
 
@@ -68,7 +75,7 @@ To update an existing checkout, copy this ZIP's project files into the checkout,
 ```powershell
 git status
 git add .
-git commit -m "Simplify LAN pairing and automate releases"
+git commit -m "Improve remote control and phone sharing"
 git push
 ```
 
@@ -82,7 +89,7 @@ For the **actual** generated EXE and installer, record the file hashes with `Get
 
 ## Testing performed and remaining
 
-Run `python tests/test_tls_integration.py` and `python tests/test_project_static.py` from the project root. The first uses mocked Windows screen/input calls and real loopback TLS to exercise PIN, lockout, approval, input gating, stream revocation and shutdown. It also demonstrates that an impersonating TLS server is accepted and receives the PIN. The second checks Android XML/resources, security wiring and font hashes statically. The encoding fix was tested with a simulated Windows cp1252 default, not on a Windows runner. GitHub's earlier Android debug build compiled successfully before these latest changes but has not been device-tested. None of these checks test actual capture, real input, Android Keystore, UI, accessibility, performance or cross-platform behavior.
+Run `python tests/test_tls_integration.py`, `python tests/test_remote_input.py`, `python tests/test_phone_stream_mock.py`, and `python tests/test_project_static.py` from the project root. Tests use mocked Windows input, real loopback TLS and a simulated phone host; they exercise PIN, approval, input gating, drag button release, malformed inputs, simulated phone JPEG stream parsing, lockout and revocation. One test demonstrates that an impersonating TLS server receives the PIN. The checks do not compile Android or test actual Android Keystore, screen capture, physical input, UI, performance or real cross-device behavior.
 
 Before release, test Windows-to-Windows, Windows-to-Android, Android-to-Windows and Android-to-Android on real devices. For each, check frame display, wrong PIN and lockout, stop/revoke, network interruption and reconnect, orientation, permissions and long-running sessions. Specifically verify Android host TLS handshakes on each Android version and manufacturer. Verify Windows remote input only after explicit host and viewer opt-in.
 
@@ -91,12 +98,12 @@ Before release, test Windows-to-Windows, Windows-to-Android, Android-to-Windows 
 - **Cannot connect:** check the host is sharing, target type, IPv4 address, private-network firewall, same LAN, Wi-Fi client isolation and ports 8765/8766. Automatic IP selection can be wrong with VPNs or multiple adapters.
 - **TLS error:** confirm both devices run this updated version. The self-signed certificate is not trusted by a normal browser. Simplified app pairing deliberately does not verify identity.
 - **Too many attempts:** wait at least 60 seconds and retry the correct PIN. Some networks share an IP across clients.
-- **Android sharing stops or is blank:** check capture permission, foreground notification, OS battery restrictions and protected content. Some Android versions block capture of protected windows. Rotation may require restarting sharing.
-- **Control unavailable:** it only works for Windows hosts and must be enabled on the host and viewer; not all keyboard shortcuts or dragging are implemented.
+- **Android sharing stops or is blank:** check that the Android app says Sharing, the OS capture permission was accepted, and the foreground notification remains present. On Windows select Android and use the phone's displayed IP and PIN, not the PC's. Check TCP 8766, phone battery restrictions and protected content. Some Android versions block capture of protected windows. Rotation may require restarting sharing. If a startup error is shown on the phone, record the error class without sharing the PIN. With Android platform-tools and USB debugging enabled, use `adb logcat -s ScreenBridgeShare` for server startup or connection errors. Review logs for private information before sharing them.
+- **Control unavailable:** it only works for Windows hosts and must be enabled on both the host and viewer. In the updated app, tap Control again after enabling the PC checkbox to recheck permission. Scroll the Android toolbar to see drag, shortcuts and other controls. Some elevated Windows windows, secure desktop, and UAC prompts cannot be controlled by a non-elevated app.
 
 ## What is missing
 
-This is not an AnyDesk replacement: no relay/NAT traversal, internet connection broker, accounts, unattended access, mobile remote control, file transfer, audio, clipboard synchronization, robust identity management, full keyboard/drag support or multi-monitor selection. Capture is MJPEG and can consume substantial CPU and bandwidth. Windows captures the primary monitor; Android capture is limited to a scaled display and may not adapt to rotation.
+This is not an AnyDesk replacement: no relay/NAT traversal, internet connection broker, accounts, unattended access, mobile remote control, file transfer, audio, clipboard synchronization, robust identity management, full physical-keyboard support, live/freehand drag or multi-monitor selection. Copy and Paste shortcuts act on the Windows host's clipboard; they do not synchronize clipboards between devices. Windows cursor rendering is approximate. Capture is MJPEG and can consume substantial CPU and bandwidth. Windows captures the primary monitor; Android capture is limited to a scaled display and may not adapt to rotation.
 
 ## Fonts
 

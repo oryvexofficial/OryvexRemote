@@ -23,6 +23,10 @@ jobs:
         run: python tests/test_tls_integration.py
       - name: Run source checks
         run: python tests/test_project_static.py
+      - name: Run remote-input checks
+        run: python tests/test_remote_input.py
+      - name: Run simulated phone stream checks
+        run: python tests/test_phone_stream_mock.py
       - name: Build EXE
         run: pyinstaller --onefile --noconsole --name ScreenBridge --icon windows/icon.ico --add-data "windows/icon.png;." --add-data "windows/Manrope-Regular.ttf;." --add-data "windows/Manrope-Bold.ttf;." windows/main.py
       - name: Install Inno Setup

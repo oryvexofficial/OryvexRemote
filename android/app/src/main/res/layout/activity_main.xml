@@ -108,6 +108,8 @@
             android:layout_height="wrap_content" android:layout_gravity="bottom" android:background="#EE192B28" android:scrollbars="none">
             <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:padding="6dp">
                 <Button android:id="@+id/btnControl" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Control: OFF" />
+                <Button android:id="@+id/btnDrag" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Drag: OFF" />
+                <Button android:id="@+id/btnShortcuts" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Shortcuts" />
                 <Button android:id="@+id/btnKeyboard" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Type" />
                 <Button android:id="@+id/btnEnter" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Enter" />
                 <Button android:id="@+id/btnEsc" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Esc" />
