@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="#F1F4ED">
+
+    <ScrollView android:id="@+id/connectPanel" android:layout_width="match_parent"
+        android:layout_height="match_parent" android:fillViewport="true" android:clipToPadding="false">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:paddingStart="24dp" android:paddingEnd="24dp"
+            android:paddingTop="28dp" android:paddingBottom="36dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="●  SCREENBRIDGE" android:textColor="#192B28" android:textStyle="bold"
+                android:letterSpacing="0.08" android:textSize="13sp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="30dp" android:text="Your screen.\nRight here." android:lineSpacingExtra="1dp"
+                android:textColor="#19332E" android:textSize="38sp" android:textStyle="bold" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="9dp" android:text="A private window between your devices."
+                android:textColor="#536C64" android:textSize="15sp" />
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="26dp" android:orientation="vertical" android:background="@drawable/panel_white"
+                android:padding="20dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="CONNECT TO A DEVICE" android:letterSpacing="0.06" android:textStyle="bold"
+                    android:textColor="#C94430" android:textSize="12sp" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:text="Open a screen." android:textStyle="bold"
+                    android:textColor="#192B28" android:textSize="21sp" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp" android:text="Start sharing on the other device, then enter its details."
+                    android:textColor="#657975" android:textSize="14sp" />
+                <RadioGroup android:id="@+id/targetType" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="horizontal"
+                    android:checkedButton="@id/targetWindows">
+                    <RadioButton android:id="@+id/targetWindows" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="Windows" android:textColor="#192B28" />
+                    <RadioButton android:id="@+id/targetAndroid" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="Android" android:textColor="#192B28" />
+                </RadioGroup>
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="Device IP address" app:boxStrokeColor="#C94430"
+                    app:hintTextColor="#C94430">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/ipInput"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:inputType="textUri" android:singleLine="true" android:textColor="#192B28" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="Access PIN" app:boxStrokeColor="#C94430"
+                    app:hintTextColor="#C94430">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/pinInput"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:inputType="numberPassword" android:singleLine="true" android:maxLength="8"
+                        android:textColor="#192B28" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="Host SHA-256 fingerprint"
+                    app:boxStrokeColor="#C94430" app:hintTextColor="#C94430">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/fingerprintInput"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:inputType="textNoSuggestions" android:singleLine="true"
+                        android:textColor="#192B28" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" android:text="Compare all 64 fingerprint digits with the host through a trusted channel."
+                    android:textColor="#657975" android:textSize="13sp" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/connectBtn"
+                    android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="14dp"
+                    android:text="Connect  →" android:textAllCaps="false" android:textSize="15sp"
+                    app:cornerRadius="16dp" app:backgroundTint="#A94D2C" />
+                <TextView android:id="@+id/statusText" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                    android:text="Both devices need the same trusted network." android:textColor="#657975" android:textSize="13sp" />
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" android:background="@drawable/panel_dark"
+                android:orientation="vertical" android:padding="20dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="SHARE THIS PHONE" android:letterSpacing="0.06" android:textStyle="bold"
+                    android:textColor="#FFAC96" android:textSize="12sp" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp" android:text="Share your phone." android:textStyle="bold"
+                    android:textColor="#FFFFFF" android:textSize="21sp" />
+                <TextView android:id="@+id/shareInfo" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:textIsSelectable="true"
+                    android:text="Show this screen on Windows or Android. View only."
+                    android:textColor="#C0D2C9" android:textSize="14sp" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/shareBtn"
+                    android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="14dp"
+                    android:text="Share phone screen  →" android:textAllCaps="false" android:textSize="15sp"
+                    android:textColor="#192B28" app:cornerRadius="12dp" app:backgroundTint="#FFF5EF" />
+            </LinearLayout>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="18dp" android:text="LAN ONLY  •  TLS WITH VERIFIED FINGERPRINT\nUse a trusted private network."
+                android:textColor="#657975" android:textSize="12sp" android:lineSpacingExtra="4dp" />
+        </LinearLayout>
+    </ScrollView>
+
+    <FrameLayout android:id="@+id/viewerPanel" android:layout_width="match_parent"
+        android:layout_height="match_parent" android:background="#192B28" android:visibility="gone">
+        <ImageView android:id="@+id/screenView" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:contentDescription="Remote PC screen" android:scaleType="fitCenter" />
+        <TextView android:id="@+id/fpsText" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_margin="12dp" android:background="#DD192B28" android:padding="8dp"
+            android:textColor="#D7E9DF" android:textSize="13sp" />
+        <Button android:id="@+id/menuBtn" android:layout_width="52dp" android:layout_height="52dp"
+            android:layout_gravity="top|end" android:layout_margin="6dp" android:text="☰" android:contentDescription="Toggle toolbar" />
+        <HorizontalScrollView android:id="@+id/toolbar" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_gravity="bottom" android:background="#EE192B28" android:scrollbars="none">
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:padding="6dp">
+                <Button android:id="@+id/btnControl" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Control: OFF" />
+                <Button android:id="@+id/btnKeyboard" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Type" />
+                <Button android:id="@+id/btnEnter" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Enter" />
+                <Button android:id="@+id/btnEsc" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Esc" />
+                <Button android:id="@+id/btnWin" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Win" />
+                <Button android:id="@+id/btnShot" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Screenshot" />
+                <Button android:id="@+id/btnQuality" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Quality: Med" />
+                <Button android:id="@+id/btnRotate" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Rotate" />
+                <Button android:id="@+id/btnDisconnect" style="@style/ViewerButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Disconnect" android:textColor="#FFAC96" />
+            </LinearLayout>
+        </HorizontalScrollView>
+    </FrameLayout>
+</FrameLayout>

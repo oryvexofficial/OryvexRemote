@@ -1,0 +1,68 @@
+name: Build ScreenBridge
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r windows/requirements.txt pyinstaller
+      - name: Run TLS and source checks
+        run: |
+          python tests/test_tls_integration.py
+          python tests/test_project_static.py
+      - name: Build EXE
+        run: pyinstaller --onefile --noconsole --name ScreenBridge --icon windows/icon.ico --add-data "windows/icon.png;." --add-data "windows/Manrope-Regular.ttf;." --add-data "windows/Manrope-Bold.ttf;." windows/main.py
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\installer.iss'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenBridge-Windows
+          path: |
+            dist/ScreenBridge.exe
+            installer/ScreenBridge-Setup.exe
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Build debug APK
+        run: gradle -p android assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenBridge-Android
+          path: android/app/build/outputs/apk/debug/*.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ScreenBridge-Windows/**/*
+            ScreenBridge-Android/*.apk
